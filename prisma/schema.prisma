@@ -10,11 +10,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── 14-Industry Taxonomy ──────────────────────────────────────────
+// logistics, mining, trading, pharma, retail, energy, automotive,
+// accounting, government, construction, cross_border, air_cargo,
+// warehousing, trade_finance
+
 model Workspace {
   id            String   @id @default(cuid())
   name          String
   slug          String   @unique
-  industry      String   @default("logistics") // logistics, mining, oil
+  industry      String   @default("logistics")
   plan          String   @default("pilot") // pilot, starter, professional, enterprise
   whatsappConnected Boolean @default(false)
   emailConnected   Boolean @default(false)
@@ -26,6 +31,7 @@ model Workspace {
   shipments    Shipment[]
   metrics      DashboardMetric[]
   channels     IngestionChannel[]
+  industryRules IndustryRule[]
 }
 
 model User {
@@ -41,11 +47,26 @@ model User {
   workspace   Workspace? @relation(fields: [workspaceId], references: [id])
 }
 
+model IndustryRule {
+  id          String   @id @default(cuid())
+  industry    String   // matches the 14-industry taxonomy
+  ruleName    String   // e.g. "weight_variance", "grade_under_spec", "vin_error"
+  logicDesc   String   // Human-readable description for the Auditor Agent
+  impactMultiplier Float @default(1.0) // Financial impact multiplier for Risk Analyst
+  severity    String   @default("medium") // low, medium, high, critical
+  category    String   @default("mismatch") // mismatch, compliance, fraud, delay
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id])
+  workspaceId String?
+}
+
 model Shipment {
   id             String   @id @default(cuid())
   reference      String   @unique
   title          String
-  industry       String   @default("logistics") // logistics, mining, oil
+  industry       String   @default("logistics")
   status         String   @default("pending") // pending, processing, cleared, flagged, held
   origin         String?
   destination    String?
@@ -75,7 +96,7 @@ model Document {
   id            String   @id @default(cuid())
   shipmentId    String
   fileName      String
-  fileType      String   // invoice, bol, packing_list, air_waybill, permit, other
+  fileType      String   // invoice, bol, packing_list, air_waybill, permit, assay_cert, batch_cert, vin_report, boq, swift_confirm, grv, etc.
   source        String   @default("upload") // upload, email, whatsapp
   content       String?
   extractedData String?
@@ -92,7 +113,7 @@ model AgentLog {
   id          String   @id @default(cuid())
   shipmentId  String
   agentName   String   // triage_clerk, data_extractor, auditor, risk_analyst, dispatcher
-  agentRole   String   // Router, OCR, Validator, Decision Maker, Communicator
+  agentRole   String   // Router, OCR Specialist, Validator, Decision Maker, Communicator
   status      String   @default("running") // running, completed, failed
   input       String?
   output      String?
@@ -105,7 +126,7 @@ model AgentLog {
 model Alert {
   id          String   @id @default(cuid())
   shipmentId  String
-  type        String   // mismatch, risk, delay, compliance, info
+  type        String   // mismatch, risk, delay, compliance, fraud, info
   severity    String   @default("medium") // low, medium, high, critical
   title       String
   message     String
@@ -133,10 +154,10 @@ model AuditTrail {
 model TimelineEvent {
   id          String   @id @default(cuid())
   shipmentId  String
-  event       String   // document_received, triage_complete, mismatch_found, risk_assessed, review_requested, approved, dispatched, etc.
+  event       String
   description String
   agentName   String?
-  icon        String?  // emoji or icon name
+  icon        String?
   timestamp   DateTime @default(now())
 
   shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)

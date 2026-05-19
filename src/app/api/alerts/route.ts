@@ -6,6 +6,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const isResolved = searchParams.get('isResolved');
     const severity = searchParams.get('severity');
+    const industry = searchParams.get('industry');
 
     const where: Record<string, unknown> = {};
 
@@ -16,6 +17,11 @@ export async function GET(request: Request) {
     if (severity) {
       const severities = severity.split(',');
       where.severity = { in: severities };
+    }
+
+    // Filter alerts by shipment industry
+    if (industry) {
+      where.shipment = { industry };
     }
 
     const alerts = await db.alert.findMany({

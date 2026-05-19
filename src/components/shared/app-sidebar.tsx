@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useAppState, type AppScreen } from '@/lib/app-state';
+import { getIndustryConfig, type IndustryKey } from '@/lib/industries';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -27,7 +28,7 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const { currentScreen, setCurrentScreen, workspaceName, userRole } = useAppState();
+  const { currentScreen, setCurrentScreen, workspaceName, userRole, workspaceIndustry } = useAppState();
   const { theme, setTheme } = useTheme();
 
   const roleLabel = userRole === 'ceo' ? 'CEO' : userRole === 'finance' ? 'Finance' : 'Operations';
@@ -93,9 +94,15 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="px-4 py-4 space-y-3">
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-foreground truncate">{workspaceName}</span>
-          <Badge variant="outline" className={`w-fit text-[10px] ${roleColor}`}>
-            {roleLabel}
-          </Badge>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Badge variant="outline" className={`w-fit text-[10px] ${roleColor}`}>
+              {roleLabel}
+            </Badge>
+            <Badge variant="outline" className={`w-fit text-[10px] border-primary/30 bg-primary/5 text-primary gap-1`}>
+              <span className="text-xs">{getIndustryConfig(workspaceIndustry).icon}</span>
+              <span className="hidden sm:inline">{getIndustryConfig(workspaceIndustry).label.split(' ')[0]}</span>
+            </Badge>
+          </div>
         </div>
 
         <Button

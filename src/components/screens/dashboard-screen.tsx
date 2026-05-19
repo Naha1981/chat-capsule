@@ -1,14 +1,15 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell, Zap, TrendingUp, Shield, Clock, Activity,
-  ChevronRight, Loader2, FileText, Send
+  ChevronRight, Loader2, FileText, Send, CheckCircle2, Circle
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  PieChart, Pie, Cell, ResponsiveContainer
+  PieChart, Pie, Cell, ResponsiveContainer,
+  BarChart, Bar, Legend
 } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,11 +23,57 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import AppSidebar from '@/components/shared/app-sidebar';
 import { useAppState } from '@/lib/app-state';
+import { INDUSTRY_LIST, getIndustryConfig, type IndustryKey } from '@/lib/industries';
 import { toast } from 'sonner';
 
 // ─── Types ───────────────────────────────────────────────────────
+interface IndustryBreakdownItem {
+  industry: string;
+  count: number;
+  label: string;
+  icon: string;
+}
+
+interface IndustryRiskBreakdownItem {
+  industry: string;
+  label: string;
+  icon: string;
+  low: number;
+  medium: number;
+  high: number;
+  critical: number;
+  totalRiskScore: number;
+}
+
+interface TopIndustryRiskItem {
+  industry: string;
+  label: string;
+  reference: string;
+  title: string;
+  riskLevel: string;
+  icon: string;
+  estimatedValue?: number;
+  riskNotes?: string;
+}
+
+interface IndustryRulesSummaryItem {
+  industry: string;
+  label: string;
+  icon: string;
+  rulesCount: number;
+}
+
+interface IndustryCoverageItem {
+  key: string;
+  label: string;
+  icon: string;
+  shipmentCount: number;
+  hasCoverage: boolean;
+}
+
 interface DashboardData {
   metrics: Array<{ key: string; value: number; label: string; unit: string }>;
   shipmentsByStatus: Array<{ status: string; _count: { status: number } }>;
@@ -41,6 +88,11 @@ interface DashboardData {
   }>;
   savingsTrend: Array<{ month: string; value: number }>;
   totalRiskValue: number;
+  industryBreakdown: IndustryBreakdownItem[];
+  industryRiskBreakdown: IndustryRiskBreakdownItem[];
+  topIndustryRisks: TopIndustryRiskItem[];
+  industryRulesSummary: IndustryRulesSummaryItem[];
+  industryCoverage: IndustryCoverageItem[];
 }
 
 // ─── Agent Definitions ───────────────────────────────────────────
@@ -52,58 +104,57 @@ const AGENTS = [
   { key: 'dispatcher', name: 'Dispatcher', icon: '📨', role: 'Communicator', color: '#8b5cf6' },
 ];
 
-// ─── Ticker Items ────────────────────────────────────────────────
+// ─── Multi-Industry Ticker Items ─────────────────────────────────
 const TICKER_ITEMS = [
-  'Auditor Agent caught Weight Mismatch on Shipment JHB-4421',
-  'Risk Analyst flagged HS Code variance on CRD-8834',
-  'Triage Clerk processed 12 invoices in 3.2 seconds',
-  'Data Extractor achieved 99.4% OCR accuracy on Mining Permits',
-  'Dispatcher sent WhatsApp alert to MD for CPT-2209',
-  'Auditor Agent detected bank account mismatch on INV-7732',
-  'Risk Analyst prevented R45,000 demurrage on DBN-5567',
-  'Triage Clerk auto-routed 8 Bol documents to extraction',
-  'Data Extractor flagged missing API Gravity on Oil BoL-9012',
-  'Auditor Agent verified SARS tariff codes for Manganese export',
+  // Logistics
+  '🚢 Auditor caught Weight Mismatch on Shipment JHB-4421',
+  '🚢 Risk Analyst flagged HS Code variance on CRD-8834',
+  '🚢 Dispatcher sent WhatsApp alert to MD for CPT-2209',
+  // Mining
+  '⛏️ Auditor flagged grade under-spec on Manganese Assay ASSY-0892',
+  '⛏️ Risk Analyst prevented R250K cargo rejection at Hotazel',
+  '⛏️ Triage Clerk auto-routed Export Permit for renewal check',
+  // Pharma
+  '💊 Cold chain break detected on Batch BN-2025-A4421',
+  '💊 Risk Analyst prevented R350K batch write-off on Amoxicillin',
+  '💊 Auditor verified GMP compliance for PharmaCorp shipment',
+  // Energy
+  '⚡ Missing Heavy Lift Permit flagged for Medupi Phase 3',
+  '⚡ Risk Analyst prevented R50K/day idle time on crane delivery',
+  '⚡ Multi-vendor coordination delay flagged on EPC-MDP-003',
+  // Automotive
+  '🚗 VIN mismatch caught across Manifest & Invoice for BMW 340i',
+  '🚗 Bond Store penalty warning issued for BND-DBN-0442',
+  // Construction
+  '🏗️ Substandard concrete (38 MPa vs 40 MPa spec) flagged on BOQ-WTR-014',
+  '🏗️ Overbilling caught on Waterberg Tower — R22K variance',
+  // Trade Finance
+  '🏦 SWIFT vs BoL verification prevented R500K document fraud',
+  '🏦 LC expiry risk flagged on LC-STD-2025-00882',
+  // Retail
+  '🛒 Short delivery caught: 28 units missing from GRV-3321',
+  '🛒 Overbilling detected on PO-CHK-8821 — unit price variance',
+  // Cross-Border
+  '🌐 Transit Bond NOT ACQUIATED flagged for TB-ZIM-2025-018',
+  '🌐 Beitbridge permit expiry warning — 2 days remaining',
+  // Air Cargo
+  '✈️ Chargeable weight anomaly detected on MAWB 074-12345678',
+  '✈️ DG non-compliance flagged on air cargo shipment',
+  // Accounting
+  '📊 Bank account mismatch detected on TI-2025-00882',
+  '📊 VAT number discrepancy flagged for SARS compliance',
+  // Trading
+  '🌍 LC amount mismatch caught — PO-2025-7821 shortfall',
+  '🌍 Insurance gap flagged on AfriTrade electronics shipment',
+  // Warehousing
+  '📦 Inventory shrinkage pattern detected — 13 units damaged',
+  '📦 Bin mismatch caught at DHL JHB warehouse',
+  // Government
+  '🏛️ Bid irregularity flagged on GPE-2025-0882 tender',
+  '🏛️ Procurement leakage warning on IT infrastructure bid',
 ];
 
-// ─── Sample Document Templates ───────────────────────────────────
-const SAMPLE_DOCUMENTS: Record<string, string> = {
-  '': '',
-  'Logistics Invoice': `COMMERCIAL INVOICE
-Invoice No: INV-2025-0042
-Date: 2025-01-15
-Shipper: AEP Mining (Pty) Ltd, Hotazel, Northern Cape
-Consignee: Sinosteel Corporation, Beijing, China
-Commodity: Manganese Ore
-HS Code: 2602.00
-Total Weight: 28,500 KG
-Total Amount: R4,280,000.00
-Bank Account: Standard Bank, Acc: 0123456789`,
-
-  'Mining Permit': `ENVIRONMENTAL COMPLIANCE PERMIT
-Permit No: DMR-2025-LIM-0312
-Issued By: Department of Mineral Resources
-Holder: Mokopane Platinum Mine
-Location: Limpopo Province
-Commodity: Platinum Group Metals
-Expiry Date: 2025-02-28
-Status: RENEWAL REQUIRED - 14 days remaining
-Conditions: Annual environmental audit compliance required`,
-
-  'Crude Oil BoL': `BILL OF LADING - CRUDE OIL
-BoL No: OIL-BOL-2025-0891
-Vessel: MT AFRICAN SPIRIT
-Port of Loading: Lagos, Nigeria
-Port of Discharge: Cape Town, Western Cape
-Cargo: Bonny Light Crude Oil
-API Gravity: 35.2
-Sulfur Content: 0.15%
-Quantity: 45,000 MT
-Shipper: NNPC Limited
-Consignee: AEP Energy (Pty) Ltd`,
-};
-
-// ─── Risk Pie Colors ─────────────────────────────────────────────
+// ─── Risk Colors ─────────────────────────────────────────────────
 const RISK_COLORS: Record<string, string> = {
   low: '#10b981',
   medium: '#f59e0b',
@@ -118,14 +169,24 @@ function formatZAR(val: number): string {
   return `R${val.toLocaleString()}`;
 }
 
+// ─── Recharts Tooltip Styling ────────────────────────────────────
+const CHART_TOOLTIP_STYLE = {
+  background: 'oklch(0.12 0.02 240 / 90%)',
+  border: '1px solid oklch(0.3 0.03 240 / 40%)',
+  borderRadius: '8px',
+  color: '#fff',
+  fontSize: '12px',
+};
+
 // ─── Main Dashboard Screen ──────────────────────────────────────
 export default function DashboardScreen() {
-  const { workspaceName } = useAppState();
+  const { workspaceName, workspaceIndustry } = useAppState();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [processDialogOpen, setProcessDialogOpen] = useState(false);
   const [docText, setDocText] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [selectedIndustry, setSelectedIndustry] = useState<string>(workspaceIndustry || 'logistics');
   const [processing, setProcessing] = useState(false);
 
   const fetchDashboard = useCallback(async () => {
@@ -145,6 +206,19 @@ export default function DashboardScreen() {
     fetchDashboard();
   }, [fetchDashboard]);
 
+  // Update selected industry when workspaceIndustry changes
+  useEffect(() => {
+    if (workspaceIndustry) {
+      setSelectedIndustry(workspaceIndustry);
+    }
+  }, [workspaceIndustry]);
+
+  // Get sample documents for the selected industry
+  const industrySampleDocs = useMemo(() => {
+    const config = getIndustryConfig(selectedIndustry);
+    return config.sampleDocuments || {};
+  }, [selectedIndustry]);
+
   const handleProcessDocument = async () => {
     if (!docText.trim()) {
       toast.error('Please enter document text');
@@ -155,7 +229,7 @@ export default function DashboardScreen() {
       const res = await fetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentText: docText }),
+        body: JSON.stringify({ documentText: docText, industry: selectedIndustry }),
       });
       const result = await res.json();
       if (result.success) {
@@ -178,7 +252,13 @@ export default function DashboardScreen() {
 
   const handleTemplateChange = (template: string) => {
     setSelectedTemplate(template);
-    setDocText(SAMPLE_DOCUMENTS[template] || '');
+    setDocText(industrySampleDocs[template] || '');
+  };
+
+  const handleIndustryChange = (industry: string) => {
+    setSelectedIndustry(industry);
+    setSelectedTemplate('');
+    setDocText('');
   };
 
   // Extract metrics with defaults
@@ -189,7 +269,7 @@ export default function DashboardScreen() {
     : 120;
   const unreadAlerts = data?.unreadAlerts ?? 0;
 
-  // Risk distribution for pie chart
+  // Risk distribution for pie chart (fallback)
   const riskData = data?.riskDistribution?.map(r => ({
     name: r.riskLevel.charAt(0).toUpperCase() + r.riskLevel.slice(1),
     value: r._count.riskLevel,
@@ -200,6 +280,21 @@ export default function DashboardScreen() {
     { name: 'High', value: 1, color: '#f97316' },
     { name: 'Critical', value: 1, color: '#ef4444' },
   ];
+
+  // Industry risk breakdown for stacked bar chart
+  const industryRiskData = data?.industryRiskBreakdown ?? [];
+
+  // Industry coverage
+  const industryCoverage = data?.industryCoverage ?? INDUSTRY_LIST.map(config => ({
+    key: config.key,
+    label: config.label,
+    icon: config.icon,
+    shipmentCount: 0,
+    hasCoverage: false,
+  }));
+
+  // Top industry risks
+  const topIndustryRisks = data?.topIndustryRisks ?? [];
 
   // Savings trend
   const savingsTrend = data?.savingsTrend ?? [];
@@ -325,13 +420,57 @@ export default function DashboardScreen() {
             </motion.div>
           </div>
 
+          {/* ─── Industry Coverage Card ────────────────────────────────── */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+            <Card className="glass-card border-border/30">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Industry Coverage</span>
+                    <Badge variant="outline" className="text-[10px] border-primary/30 text-primary">
+                      {industryCoverage.filter(i => i.hasCoverage).length}/{industryCoverage.length} active
+                    </Badge>
+                  </div>
+                </div>
+                <ScrollArea className="w-full whitespace-nowrap">
+                  <div className="flex gap-3 pb-2">
+                    {industryCoverage.map((item) => (
+                      <div
+                        key={item.key}
+                        className={`flex-shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
+                          item.hasCoverage
+                            ? 'border-emerald-500/30 bg-emerald-500/5'
+                            : 'border-border/20 bg-muted/5'
+                        }`}
+                      >
+                        <span className="text-base">{item.icon}</span>
+                        <div className="flex flex-col">
+                          <span className="text-xs font-medium whitespace-nowrap">{item.label}</span>
+                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                            {item.shipmentCount} shipment{item.shipmentCount !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        {item.hasCoverage ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                        ) : (
+                          <Circle className="w-3.5 h-3.5 text-muted-foreground/40 flex-shrink-0" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <ScrollBar orientation="horizontal" />
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </motion.div>
+
           {/* ─── Live Ticker Feed ───────────────────────────────────── */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
             <Card className="glass-card border-border/30 overflow-hidden">
               <CardContent className="p-0">
                 <div className="flex items-center gap-2 px-4 py-2 border-b border-border/20">
                   <div className="w-2 h-2 rounded-full bg-emerald-500 animate-subtle-pulse" />
-                  <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Live AI Catches</span>
+                  <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Live AI Catches — Multi-Industry</span>
                 </div>
                 <div className="h-16 overflow-hidden relative">
                   <div className="ticker-scroll">
@@ -406,13 +545,7 @@ export default function DashboardScreen() {
                         <XAxis dataKey="month" tick={{ fontSize: 12, fill: 'oklch(0.6 0.01 240)' }} />
                         <YAxis tick={{ fontSize: 12, fill: 'oklch(0.6 0.01 240)' }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
                         <Tooltip
-                          contentStyle={{
-                            background: 'oklch(0.12 0.02 240 / 90%)',
-                            border: '1px solid oklch(0.3 0.03 240 / 40%)',
-                            borderRadius: '8px',
-                            color: '#fff',
-                            fontSize: '12px',
-                          }}
+                          contentStyle={CHART_TOOLTIP_STYLE}
                           formatter={(value: number) => [`R${value.toLocaleString()}`, 'Savings']}
                         />
                         <Area type="monotone" dataKey="value" stroke="#00e5ff" fill="url(#cyanGradient)" strokeWidth={2} />
@@ -426,48 +559,84 @@ export default function DashboardScreen() {
                 </CardContent>
               </Card>
 
-              {/* Risk Distribution */}
+              {/* Industry Risk Breakdown - Stacked Bar Chart */}
               <Card className="glass-card border-border/30">
                 <CardContent className="p-5">
-                  <h3 className="text-sm font-semibold mb-4">Risk Distribution</h3>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <PieChart>
-                      <Pie
-                        data={riskData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={55}
-                        outerRadius={85}
-                        paddingAngle={4}
-                        dataKey="value"
+                  <h3 className="text-sm font-semibold mb-4">Risk Breakdown by Industry</h3>
+                  {industryRiskData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={industryRiskData} layout="vertical" margin={{ left: 10, right: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.02 240 / 30%)" />
+                        <XAxis type="number" tick={{ fontSize: 11, fill: 'oklch(0.6 0.01 240)' }} allowDecimals={false} />
+                        <YAxis
+                          type="category"
+                          dataKey="label"
+                          tick={{ fontSize: 10, fill: 'oklch(0.6 0.01 240)' }}
+                          width={110}
+                        />
+                        <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                        <Legend wrapperStyle={{ fontSize: '10px' }} />
+                        <Bar dataKey="critical" stackId="risk" fill="#ef4444" name="Critical" />
+                        <Bar dataKey="high" stackId="risk" fill="#f97316" name="High" />
+                        <Bar dataKey="medium" stackId="risk" fill="#f59e0b" name="Medium" />
+                        <Bar dataKey="low" stackId="risk" fill="#10b981" name="Low" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">
+                      No industry risk data available
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </motion.div>
+
+          {/* ─── Top Industry Risks ────────────────────────────────────── */}
+          {topIndustryRisks.length > 0 && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65 }}>
+              <Card className="glass-card border-border/30">
+                <CardContent className="p-5">
+                  <h3 className="text-sm font-semibold mb-4">Top Risks by Industry</h3>
+                  <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-2">
+                    {topIndustryRisks.map((risk, i) => (
+                      <div
+                        key={`${risk.industry}-${i}`}
+                        className="flex items-center gap-3 p-3 rounded-lg bg-background/30 border border-border/10 hover:border-border/30 transition-colors"
                       >
-                        {riskData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          background: 'oklch(0.12 0.02 240 / 90%)',
-                          border: '1px solid oklch(0.3 0.03 240 / 40%)',
-                          borderRadius: '8px',
-                          color: '#fff',
-                          fontSize: '12px',
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="flex items-center justify-center gap-4 mt-2">
-                    {riskData.map((entry) => (
-                      <div key={entry.name} className="flex items-center gap-1.5">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
-                        <span className="text-[11px] text-muted-foreground">{entry.name} ({entry.value})</span>
+                        <span className="text-lg flex-shrink-0">{risk.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold">{risk.reference}</span>
+                            <Badge
+                              variant="outline"
+                              className={`text-[9px] px-1.5 py-0 ${
+                                risk.riskLevel === 'critical'
+                                  ? 'border-red-500/30 text-red-400 bg-red-500/5'
+                                  : risk.riskLevel === 'high'
+                                    ? 'border-orange-500/30 text-orange-400 bg-orange-500/5'
+                                    : 'border-amber-500/30 text-amber-400 bg-amber-500/5'
+                              }`}
+                            >
+                              {risk.riskLevel.toUpperCase()}
+                            </Badge>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                            {risk.title} — {risk.label}
+                          </p>
+                        </div>
+                        {risk.estimatedValue ? (
+                          <span className="text-xs font-medium text-destructive flex-shrink-0">
+                            {formatZAR(risk.estimatedValue)}
+                          </span>
+                        ) : null}
                       </div>
                     ))}
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          </motion.div>
+            </motion.div>
+          )}
         </div>
       </main>
 
@@ -480,21 +649,52 @@ export default function DashboardScreen() {
               Process Document
             </DialogTitle>
             <DialogDescription>
-              Paste document text or select a sample template to process through the AI swarm.
+              Select an industry and paste document text or choose a sample template to process through the AI swarm.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* Industry Selector */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Industry</label>
+              <Select value={selectedIndustry} onValueChange={handleIndustryChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select industry..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {INDUSTRY_LIST.map((config) => (
+                    <SelectItem key={config.key} value={config.key}>
+                      {config.icon} {config.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Sample Document Selector (filtered by industry) */}
             <div>
               <label className="text-sm font-medium mb-2 block">Sample Document</label>
               <Select value={selectedTemplate} onValueChange={handleTemplateChange}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a sample document..." />
+                  <SelectValue placeholder={
+                    Object.keys(industrySampleDocs).length > 0
+                      ? 'Select a sample document...'
+                      : 'No sample docs for this industry'
+                  } />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="logistics">Logistics Invoice</SelectItem>
-                  <SelectItem value="mining">Mining Permit</SelectItem>
-                  <SelectItem value="oil">Crude Oil BoL</SelectItem>
+                  {Object.keys(industrySampleDocs).length > 0 ? (
+                    Object.entries(industrySampleDocs).map(([name, _text]) => (
+                      <SelectItem key={name} value={name}>
+                        <FileText className="w-3 h-3 mr-1 inline" />
+                        {name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="_none" disabled>
+                      No sample documents available
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>

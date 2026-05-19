@@ -5,6 +5,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const industry = searchParams.get('industry');
 
     // Single shipment detail
     if (id) {
@@ -24,8 +25,15 @@ export async function GET(request: Request) {
       return NextResponse.json(shipment);
     }
 
+    // Build where clause with optional industry filter
+    const where: Record<string, unknown> = {};
+    if (industry) {
+      where.industry = industry;
+    }
+
     // List all shipments with includes
     const shipments = await db.shipment.findMany({
+      where,
       orderBy: { updatedAt: 'desc' },
       include: {
         documents: true,
