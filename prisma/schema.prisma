@@ -10,15 +10,35 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Workspace {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  industry      String   @default("logistics") // logistics, mining, oil
+  plan          String   @default("pilot") // pilot, starter, professional, enterprise
+  whatsappConnected Boolean @default(false)
+  emailConnected   Boolean @default(false)
+  onboardingComplete Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users        User[]
+  shipments    Shipment[]
+  metrics      DashboardMetric[]
+  channels     IngestionChannel[]
+}
+
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  company   String?
-  role      String   @default("viewer") // admin, manager, viewer
-  phone     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String?
+  role        String   @default("operations") // ceo, operations, finance
+  avatar      String?
+  workspaceId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id])
 }
 
 model Shipment {
@@ -38,26 +58,32 @@ model Shipment {
   hsCode         String?
   riskLevel      String   @default("low") // low, medium, high, critical
   riskNotes      String?
-  estimatedValue Float?   // Financial risk in ZAR
+  estimatedValue Float?
+  workspaceId    String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  documents  Document[]
-  agentLogs  AgentLog[]
-  alerts     Alert[]
-  auditTrails AuditTrail[]
+  workspace    Workspace?   @relation(fields: [workspaceId], references: [id])
+  documents    Document[]
+  agentLogs    AgentLog[]
+  alerts       Alert[]
+  auditTrails  AuditTrail[]
+  timeline     TimelineEvent[]
 }
 
 model Document {
-  id           String   @id @default(cuid())
-  shipmentId   String
-  fileName     String
-  fileType     String   // invoice, bol, packing_list, air_waybill, permit, other
-  source       String   @default("upload") // upload, email, whatsapp
-  content      String?  // Extracted text
-  extractedData String? // JSON string of extracted data
-  status       String   @default("pending") // pending, processed, error
-  createdAt    DateTime @default(now())
+  id            String   @id @default(cuid())
+  shipmentId    String
+  fileName      String
+  fileType      String   // invoice, bol, packing_list, air_waybill, permit, other
+  source        String   @default("upload") // upload, email, whatsapp
+  content       String?
+  extractedData String?
+  status        String   @default("pending") // pending, processed, exception, critical
+  ocrConfidence Float?
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  createdAt     DateTime @default(now())
 
   shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
 }
@@ -68,9 +94,9 @@ model AgentLog {
   agentName   String   // triage_clerk, data_extractor, auditor, risk_analyst, dispatcher
   agentRole   String   // Router, OCR, Validator, Decision Maker, Communicator
   status      String   @default("running") // running, completed, failed
-  input       String?  // What the agent received
-  output      String?  // What the agent produced
-  duration    Int?     // Duration in ms
+  input       String?
+  output      String?
+  duration    Int?
   createdAt   DateTime @default(now())
 
   shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
@@ -94,23 +120,38 @@ model Alert {
 model AuditTrail {
   id          String   @id @default(cuid())
   shipmentId  String
-  action      String   // document_received, triage_complete, extraction_complete, audit_flag, risk_assessed, dispatched
+  action      String
   agentName   String?
   details     String?
-  oldValue     String?
-  newValue     String?
+  oldValue    String?
+  newValue    String?
   createdAt   DateTime @default(now())
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+}
+
+model TimelineEvent {
+  id          String   @id @default(cuid())
+  shipmentId  String
+  event       String   // document_received, triage_complete, mismatch_found, risk_assessed, review_requested, approved, dispatched, etc.
+  description String
+  agentName   String?
+  icon        String?  // emoji or icon name
+  timestamp   DateTime @default(now())
 
   shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
 }
 
 model DashboardMetric {
   id          String   @id @default(cuid())
-  key         String   @unique
+  key         String
   value       Float
   label       String
-  unit        String?  // ZAR, %, count
+  unit        String?
+  workspaceId String?
   updatedAt   DateTime @updatedAt
+
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id])
 }
 
 model IngestionChannel {
@@ -119,5 +160,8 @@ model IngestionChannel {
   config      String   // JSON config
   isActive    Boolean  @default(true)
   lastSyncAt  DateTime?
+  workspaceId String?
   createdAt   DateTime @default(now())
+
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id])
 }
