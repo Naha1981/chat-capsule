@@ -1,0 +1,123 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  company   String?
+  role      String   @default("viewer") // admin, manager, viewer
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Shipment {
+  id             String   @id @default(cuid())
+  reference      String   @unique
+  title          String
+  industry       String   @default("logistics") // logistics, mining, oil
+  status         String   @default("pending") // pending, processing, cleared, flagged, held
+  origin         String?
+  destination    String?
+  supplier       String?
+  buyer          String?
+  totalAmount    Float?
+  currency       String   @default("ZAR")
+  grossWeightKg  Float?
+  commodity      String?
+  hsCode         String?
+  riskLevel      String   @default("low") // low, medium, high, critical
+  riskNotes      String?
+  estimatedValue Float?   // Financial risk in ZAR
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  documents  Document[]
+  agentLogs  AgentLog[]
+  alerts     Alert[]
+  auditTrails AuditTrail[]
+}
+
+model Document {
+  id           String   @id @default(cuid())
+  shipmentId   String
+  fileName     String
+  fileType     String   // invoice, bol, packing_list, air_waybill, permit, other
+  source       String   @default("upload") // upload, email, whatsapp
+  content      String?  // Extracted text
+  extractedData String? // JSON string of extracted data
+  status       String   @default("pending") // pending, processed, error
+  createdAt    DateTime @default(now())
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+}
+
+model AgentLog {
+  id          String   @id @default(cuid())
+  shipmentId  String
+  agentName   String   // triage_clerk, data_extractor, auditor, risk_analyst, dispatcher
+  agentRole   String   // Router, OCR, Validator, Decision Maker, Communicator
+  status      String   @default("running") // running, completed, failed
+  input       String?  // What the agent received
+  output      String?  // What the agent produced
+  duration    Int?     // Duration in ms
+  createdAt   DateTime @default(now())
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+}
+
+model Alert {
+  id          String   @id @default(cuid())
+  shipmentId  String
+  type        String   // mismatch, risk, delay, compliance, info
+  severity    String   @default("medium") // low, medium, high, critical
+  title       String
+  message     String
+  channel     String   @default("dashboard") // dashboard, whatsapp, email
+  isRead      Boolean  @default(false)
+  isResolved  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+}
+
+model AuditTrail {
+  id          String   @id @default(cuid())
+  shipmentId  String
+  action      String   // document_received, triage_complete, extraction_complete, audit_flag, risk_assessed, dispatched
+  agentName   String?
+  details     String?
+  oldValue     String?
+  newValue     String?
+  createdAt   DateTime @default(now())
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+}
+
+model DashboardMetric {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Float
+  label       String
+  unit        String?  // ZAR, %, count
+  updatedAt   DateTime @updatedAt
+}
+
+model IngestionChannel {
+  id          String   @id @default(cuid())
+  type        String   // email, whatsapp, api
+  config      String   // JSON config
+  isActive    Boolean  @default(true)
+  lastSyncAt  DateTime?
+  createdAt   DateTime @default(now())
+}
