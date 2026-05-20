@@ -1,17 +1,18 @@
 ---
 Task ID: 1
-Agent: Main Agent
-Task: Fix broken app preview
+Agent: Main
+Task: Fix app preview - dev server not running / sandbox inactive
 
 Work Log:
-- Diagnosed that page.tsx only had inline landing page and basic text redirects, not using actual screen components
-- Fixed page.tsx to properly route to all screen components (LandingScreen, OnboardingScreen, DashboardScreen, InboxScreen, ShipmentScreen, ReviewScreen, NerveCenterScreen)
-- Fixed next.config.ts to add allowedDevOrigins for .space-z.ai preview
-- Seeded database with 19 shipments across 10 industries, 31 industry rules
-- Verified app compiles and serves (GET / 200 in 3.0s)
-- Dev server running on port 3000
+- Diagnosed dev server was crashing after initial compilation
+- Root cause: All 7 screen components (230KB+ total) compiled at once, causing server to hang and die
+- Fixed by implementing React.lazy() code splitting in page.tsx
+- Fixed cross-origin request blocking for preview panel (added specific origin to allowedDevOrigins)
+- Used double-fork process management to keep dev server alive as background daemon
+- Verified server returns HTTP 200 with 52KB+ of rendered HTML content
 
 Stage Summary:
-- App preview is now working - all 7 screens properly routed
-- Database seeded with realistic South African logistics data
-- Cross-origin preview warning fixed
+- Dev server is now running and stable on port 3000
+- Page renders CapsuleFlow AI landing screen with all CSS/design tokens
+- Lazy loading prevents compilation bottleneck
+- Lint passes cleanly
