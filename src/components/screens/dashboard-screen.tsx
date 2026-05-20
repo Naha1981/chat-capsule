@@ -4,12 +4,12 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bell, Zap, TrendingUp, Shield, Clock, Activity,
-  ChevronRight, Loader2, FileText, Send, CheckCircle2, Circle
+  ChevronRight, Loader2, FileText, Send, CheckCircle2, Circle,
+  Search, AlertTriangle, Verified, Bolt
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  PieChart, Pie, Cell, ResponsiveContainer,
-  BarChart, Bar, Legend
+  ResponsiveContainer
 } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,7 +23,6 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import AppSidebar from '@/components/shared/app-sidebar';
 import { useAppState } from '@/lib/app-state';
 import { INDUSTRY_LIST, getIndustryConfig, type IndustryKey } from '@/lib/industries';
@@ -97,11 +96,11 @@ interface DashboardData {
 
 // ─── Agent Definitions ───────────────────────────────────────────
 const AGENTS = [
-  { key: 'triage_clerk', name: 'Triage Clerk', icon: '📋', role: 'Router', color: '#10b981' },
-  { key: 'data_extractor', name: 'Data Extractor', icon: '🔍', role: 'OCR Specialist', color: '#3b82f6' },
-  { key: 'auditor', name: 'Auditor', icon: '🛡️', role: 'Validator', color: '#f59e0b' },
-  { key: 'risk_analyst', name: 'Risk Analyst', icon: '📊', role: 'Decision Maker', color: '#ef4444' },
-  { key: 'dispatcher', name: 'Dispatcher', icon: '📨', role: 'Communicator', color: '#8b5cf6' },
+  { key: 'triage_clerk', name: 'Triage', icon: '📋', role: 'Router', color: '#10b981', status: 'Online' as const },
+  { key: 'data_extractor', name: 'Extractor', icon: '🔍', role: 'OCR Specialist', color: '#3b82f6', status: 'Online' as const },
+  { key: 'auditor', name: 'Auditor', icon: '🛡️', role: 'Validator', color: '#f59e0b', status: 'Working' as const },
+  { key: 'risk_analyst', name: 'Risk', icon: '📊', role: 'Decision Maker', color: '#ef4444', status: 'Online' as const },
+  { key: 'dispatcher', name: 'Dispatcher', icon: '📨', role: 'Communicator', color: '#8b5cf6', status: 'Online' as const },
 ];
 
 // ─── Multi-Industry Ticker Items ─────────────────────────────────
@@ -162,6 +161,14 @@ const RISK_COLORS: Record<string, string> = {
   critical: '#ef4444',
 };
 
+// ─── Risk Index Data ─────────────────────────────────────────────
+const RISK_INDEX_DATA = [
+  { label: 'Logistics', risk: 'LOW', value: 15, color: '#10b981' },
+  { label: 'Chemical / Hazmat', risk: 'HIGH', value: 82, color: '#f97316' },
+  { label: 'Manufacturing', risk: 'MEDIUM', value: 45, color: '#f59e0b' },
+  { label: 'Consumer Goods', risk: 'LOW', value: 20, color: '#10b981' },
+];
+
 // ─── Format Helpers ──────────────────────────────────────────────
 function formatZAR(val: number): string {
   if (val >= 1000000) return `R${(val / 1000000).toFixed(0)}M`;
@@ -188,6 +195,9 @@ export default function DashboardScreen() {
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [selectedIndustry, setSelectedIndustry] = useState<string>(workspaceIndustry || 'logistics');
   const [processing, setProcessing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roiDocsPerDay, setRoiDocsPerDay] = useState(24);
+  const [roiAvgMinPerDoc, setRoiAvgMinPerDoc] = useState(15);
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -262,39 +272,13 @@ export default function DashboardScreen() {
   };
 
   // Extract metrics with defaults
-  const totalSavings = data?.metrics?.find(m => m.key === 'total_savings_zar')?.value ?? 847000;
-  const risksCaught = data?.metrics?.find(m => m.key === 'risks_caught')?.value ?? 89;
+  const totalSavings = data?.metrics?.find(m => m.key === 'total_savings_zar')?.value ?? 4200000;
+  const risksCaught = data?.metrics?.find(m => m.key === 'risks_caught')?.value ?? 3;
   const hoursReclaimed = data?.metrics?.find(m => m.key === 'documents_processed')?.value
     ? Math.round((data.metrics.find(m => m.key === 'documents_processed')!.value / 1247) * 120)
-    : 120;
+    : 1840;
+  const selfCorrections = data?.metrics?.find(m => m.key === 'documents_processed')?.value ?? 942;
   const unreadAlerts = data?.unreadAlerts ?? 0;
-
-  // Risk distribution for pie chart (fallback)
-  const riskData = data?.riskDistribution?.map(r => ({
-    name: r.riskLevel.charAt(0).toUpperCase() + r.riskLevel.slice(1),
-    value: r._count.riskLevel,
-    color: RISK_COLORS[r.riskLevel] || '#6b7280',
-  })) ?? [
-    { name: 'Low', value: 4, color: '#10b981' },
-    { name: 'Medium', value: 2, color: '#f59e0b' },
-    { name: 'High', value: 1, color: '#f97316' },
-    { name: 'Critical', value: 1, color: '#ef4444' },
-  ];
-
-  // Industry risk breakdown for stacked bar chart
-  const industryRiskData = data?.industryRiskBreakdown ?? [];
-
-  // Industry coverage
-  const industryCoverage = data?.industryCoverage ?? INDUSTRY_LIST.map(config => ({
-    key: config.key,
-    label: config.label,
-    icon: config.icon,
-    shipmentCount: 0,
-    hasCoverage: false,
-  }));
-
-  // Top industry risks
-  const topIndustryRisks = data?.topIndustryRisks ?? [];
 
   // Savings trend
   const savingsTrend = data?.savingsTrend ?? [];
@@ -308,14 +292,21 @@ export default function DashboardScreen() {
     };
   });
 
+  // ROI Calculation
+  const annualSavings = useMemo(() => {
+    const hoursPerYear = roiDocsPerDay * (roiAvgMinPerDoc / 60) * 250; // 250 working days
+    const costPerHour = 350; // ZAR
+    return Math.round(hoursPerYear * costPerHour);
+  }, [roiDocsPerDay, roiAvgMinPerDoc]);
+
   if (loading) {
     return (
       <div className="flex min-h-screen">
         <AppSidebar />
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 md:ml-64 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="w-8 h-8 text-primary animate-spin" />
-            <span className="text-sm text-muted-foreground">Loading dashboard...</span>
+            <span className="text-sm text-on-surface-variant">Loading dashboard...</span>
           </div>
         </div>
       </div>
@@ -326,329 +317,310 @@ export default function DashboardScreen() {
     <div className="flex min-h-screen">
       <AppSidebar />
 
-      {/* Main content */}
-      <main className="flex-1 min-h-screen overflow-y-auto">
-        {/* Mobile spacer */}
-        <div className="h-14 md:hidden" />
+      {/* ─── Main Content Area ──────────────────────────────────── */}
+      <main className="flex-1 md:ml-64 min-h-screen overflow-y-auto relative">
 
-        {/* Top Bar */}
-        <header className="sticky top-0 z-30 glass-card-strong border-b border-border/30 px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold hidden sm:block">{workspaceName}</h1>
-            <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/5 text-emerald-400 text-[10px]">
-              <Activity className="w-3 h-3 mr-1 animate-subtle-pulse" />
-              Live
-            </Badge>
+        {/* ─── 1. Top Bar ─────────────────────────────────────────── */}
+        <header className="sticky top-0 z-30 glass-card-strong border-b border-glass-border px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+          {/* Left */}
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <h1 className="text-lg font-extrabold text-primary-fixed-dim whitespace-nowrap tracking-tight" style={{ fontFamily: 'var(--font-hanken-grotesk), system-ui, sans-serif' }}>
+              Supply Chain Alpha
+            </h1>
+            <div className="hidden sm:flex items-center gap-2 bg-surface-container-high rounded-lg px-3 py-1.5 border border-glass-border flex-1 max-w-xs">
+              <Search className="w-4 h-4 text-on-surface-variant flex-shrink-0" />
+              <input
+                type="text"
+                placeholder="Search shipments, risks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="bg-transparent text-sm text-on-surface placeholder:text-on-surface-variant/50 outline-none w-full"
+              />
+            </div>
           </div>
+
+          {/* Right */}
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground">
+            <button className="relative p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors">
               <Bell className="w-5 h-5" />
               {unreadAlerts > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-[10px] text-white flex items-center justify-center font-bold">
-                  {unreadAlerts}
-                </span>
+                <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-risk-critical animate-subtle-pulse" />
               )}
-            </Button>
+            </button>
             <Button
-              className="glow-cyan bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
+              className="bg-secondary-container hover:bg-secondary-container/80 text-on-secondary glow-cyan font-semibold text-sm"
               onClick={() => setProcessDialogOpen(true)}
             >
-              <Zap className="w-4 h-4 mr-2" />
+              <Zap className="w-4 h-4 mr-1.5" />
               <span className="hidden sm:inline">Process Document</span>
               <span className="sm:hidden">Process</span>
             </Button>
+            <div className="w-8 h-8 rounded-full bg-primary-fixed-dim flex items-center justify-center text-on-primary font-bold text-xs">
+              TM
+            </div>
           </div>
         </header>
 
-        <div className="p-4 sm:p-6 space-y-6">
-          {/* ─── 3 Metric Cards ────────────────────────────────────── */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-              <Card className="glass-card border-border/30 overflow-hidden">
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Total Value Captured</span>
-                    <div className="p-1.5 rounded-lg bg-emerald-500/10">
-                      <TrendingUp className="w-4 h-4 text-emerald-500" />
-                    </div>
-                  </div>
-                  <p className="text-2xl sm:text-3xl font-bold text-glow-cyan text-primary">
-                    R{totalSavings.toLocaleString()}
+        <div className="p-4 sm:p-6 space-y-5 pb-24">
+
+          {/* ─── 2. Live Ticker ────────────────────────────────────── */}
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+            <div className="glass-card rounded-lg overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-2.5 border-b border-glass-border">
+                <div className="w-2 h-2 rounded-full bg-risk-low animate-subtle-pulse" />
+                <span className="label-caps text-on-surface-variant">Live AI Catches</span>
+              </div>
+              <div className="overflow-hidden relative h-9">
+                <div className="ticker-scroll">
+                  {[...TICKER_ITEMS, ...TICKER_ITEMS].map((item, i) => {
+                    const iconType = i % 3 === 0 ? 'verified' : i % 3 === 1 ? 'warning' : 'bolt';
+                    return (
+                      <div key={i} className="h-9 flex items-center px-4 text-sm gap-2 whitespace-nowrap">
+                        {iconType === 'verified' && <Verified className="w-3.5 h-3.5 text-risk-low flex-shrink-0" />}
+                        {iconType === 'warning' && <AlertTriangle className="w-3.5 h-3.5 text-risk-high flex-shrink-0" />}
+                        {iconType === 'bolt' && <Bolt className="w-3.5 h-3.5 text-primary-fixed-dim flex-shrink-0" />}
+                        <span className="text-on-surface-variant">{item}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* ─── 3. Four Metric Cards ──────────────────────────────── */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            {/* Total Value Captured */}
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+              <div className="glass-card rounded-lg relative overflow-hidden">
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-risk-low" />
+                <div className="p-4 sm:p-5 pl-5 sm:pl-6">
+                  <span className="label-caps text-on-surface-variant">Total Value Captured</span>
+                  <p className="text-2xl sm:text-3xl font-bold font-mono text-primary-fixed-dim mt-1">
+                    {totalSavings >= 1000000 ? `$${(totalSavings / 1000000).toFixed(1)}M` : formatZAR(totalSavings)}
                   </p>
                   <div className="flex items-center gap-1 mt-2">
-                    <TrendingUp className="w-3 h-3 text-emerald-500" />
-                    <span className="text-xs text-emerald-500 font-medium">+23% this month</span>
+                    <TrendingUp className="w-3 h-3 text-risk-low" />
+                    <span className="text-xs font-medium text-risk-low">+12%</span>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </motion.div>
 
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-              <Card className="glass-card border-border/30 overflow-hidden">
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Critical Risks Prevented</span>
-                    <div className="p-1.5 rounded-lg bg-amber-500/10">
-                      <Shield className="w-4 h-4 text-amber-500" />
-                    </div>
-                  </div>
-                  <p className="text-2xl sm:text-3xl font-bold text-glow-cyan text-primary">{risksCaught}</p>
-                  <div className="flex items-center gap-1 mt-2">
-                    <Shield className="w-3 h-3 text-amber-500" />
-                    <span className="text-xs text-amber-500 font-medium">12 critical this week</span>
-                  </div>
-                </CardContent>
-              </Card>
+            {/* Critical Risks */}
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+              <div className="glass-card rounded-lg relative overflow-hidden">
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-risk-high" />
+                <div className="p-4 sm:p-5 pl-5 sm:pl-6">
+                  <span className="label-caps text-on-surface-variant">Critical Risks</span>
+                  <p className="text-2xl sm:text-3xl font-bold font-mono text-risk-high mt-1">
+                    {String(risksCaught).padStart(2, '0')}
+                  </p>
+                  <span className="text-xs text-risk-high font-medium mt-2 block">Action Req.</span>
+                </div>
+              </div>
             </motion.div>
 
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-              <Card className="glass-card border-border/30 overflow-hidden">
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Human Hours Reclaimed</span>
-                    <div className="p-1.5 rounded-lg bg-cyan-500/10">
-                      <Clock className="w-4 h-4 text-cyan-500" />
-                    </div>
-                  </div>
-                  <p className="text-2xl sm:text-3xl font-bold text-glow-cyan text-primary">{hoursReclaimed}</p>
-                  <div className="flex items-center gap-1 mt-2">
-                    <Clock className="w-3 h-3 text-cyan-500" />
-                    <span className="text-xs text-cyan-500 font-medium">~15 min per document saved</span>
-                  </div>
-                </CardContent>
-              </Card>
+            {/* Hours Reclaimed */}
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+              <div className="glass-card rounded-lg relative overflow-hidden">
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-secondary-container" />
+                <div className="p-4 sm:p-5 pl-5 sm:pl-6">
+                  <span className="label-caps text-on-surface-variant">Hours Reclaimed</span>
+                  <p className="text-2xl sm:text-3xl font-bold font-mono text-primary-fixed-dim mt-1">
+                    {hoursReclaimed.toLocaleString()}
+                  </p>
+                  <span className="text-xs text-secondary-fixed-dim font-medium mt-2 block">MTD</span>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Self-Corrections */}
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+              <div className="glass-card rounded-lg relative overflow-hidden">
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-tertiary-fixed-dim" />
+                <div className="p-4 sm:p-5 pl-5 sm:pl-6">
+                  <span className="label-caps text-on-surface-variant">Self-Corrections</span>
+                  <p className="text-2xl sm:text-3xl font-bold font-mono text-primary-fixed-dim mt-1">
+                    {selfCorrections.toLocaleString()}
+                  </p>
+                  <span className="text-xs text-tertiary-fixed-dim font-medium mt-2 block">99.2% Acc.</span>
+                </div>
+              </div>
             </motion.div>
           </div>
 
-          {/* ─── Industry Coverage Card ────────────────────────────────── */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
-            <Card className="glass-card border-border/30">
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Industry Coverage</span>
-                    <Badge variant="outline" className="text-[10px] border-primary/30 text-primary">
-                      {industryCoverage.filter(i => i.hasCoverage).length}/{industryCoverage.length} active
-                    </Badge>
-                  </div>
-                </div>
-                <ScrollArea className="w-full whitespace-nowrap">
-                  <div className="flex gap-3 pb-2">
-                    {industryCoverage.map((item) => (
-                      <div
-                        key={item.key}
-                        className={`flex-shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
-                          item.hasCoverage
-                            ? 'border-emerald-500/30 bg-emerald-500/5'
-                            : 'border-border/20 bg-muted/5'
-                        }`}
-                      >
-                        <span className="text-base">{item.icon}</span>
-                        <div className="flex flex-col">
-                          <span className="text-xs font-medium whitespace-nowrap">{item.label}</span>
-                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                            {item.shipmentCount} shipment{item.shipmentCount !== 1 ? 's' : ''}
-                          </span>
-                        </div>
-                        {item.hasCoverage ? (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                        ) : (
-                          <Circle className="w-3.5 h-3.5 text-muted-foreground/40 flex-shrink-0" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <ScrollBar orientation="horizontal" />
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* ─── Live Ticker Feed ───────────────────────────────────── */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
-            <Card className="glass-card border-border/30 overflow-hidden">
-              <CardContent className="p-0">
-                <div className="flex items-center gap-2 px-4 py-2 border-b border-border/20">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-subtle-pulse" />
-                  <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Live AI Catches — Multi-Industry</span>
-                </div>
-                <div className="h-16 overflow-hidden relative">
-                  <div className="ticker-scroll">
-                    {[...TICKER_ITEMS, ...TICKER_ITEMS].map((item, i) => (
-                      <div key={i} className="h-8 flex items-center px-4 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                        <Activity className="w-3 h-3 mr-2 text-primary/50" />
-                        {item}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* ─── 5-Agent Swarm Status ───────────────────────────────── */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">5-Agent Swarm Status</span>
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-subtle-pulse" />
+          {/* ─── 4. 5-Agent Swarm Status ───────────────────────────── */}
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+            <div className="flex items-center gap-3 mb-3">
+              <h2 className="text-base font-bold text-on-surface">5-Agent Swarm Status</h2>
+              <Badge className="bg-risk-low/10 text-risk-low border-risk-low/30 text-[10px] font-mono">
+                <div className="w-1.5 h-1.5 rounded-full bg-risk-low animate-subtle-pulse mr-1.5" />
+                Swarm Cluster: Healthy (af-south-1)
+              </Badge>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               {AGENTS.map((agent, i) => {
                 const stats = agentStatsMap[agent.key];
+                const isWorking = agent.status === 'Working';
                 return (
                   <motion.div
                     key={agent.key}
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.5 + i * 0.08 }}
+                    transition={{ delay: 0.3 + i * 0.06 }}
                   >
-                    <Card className="glass-card border-border/30 hover:border-primary/20 transition-colors">
-                      <CardContent className="p-4 text-center">
-                        <div className="text-2xl mb-2">{agent.icon}</div>
-                        <h4 className="text-sm font-semibold">{agent.name}</h4>
-                        <p className="text-[10px] text-muted-foreground mb-2">{agent.role}</p>
-                        <div className="flex items-center justify-center gap-1 mb-1">
-                          <Clock className="w-3 h-3 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">
-                            ~{stats?.avgDuration ? Math.round(stats.avgDuration) : ['340','1200','890','560','230'][i]}ms
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-center gap-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-subtle-pulse" />
-                          <span className="text-[10px] text-emerald-500 font-medium">Online</span>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <div className={`glass-card rounded-lg p-4 text-center ${isWorking ? 'ring-1 ring-primary-fixed-dim/30' : ''}`}>
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-2 text-lg ${isWorking ? 'bg-primary-fixed-dim/20 animate-subtle-pulse' : 'bg-surface-container-high'}`}>
+                        {agent.icon}
+                      </div>
+                      <h4 className="text-sm font-semibold text-on-surface">{agent.name}</h4>
+                      <p className="text-[10px] text-on-surface-variant mb-2">{agent.role}</p>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <div className={`w-1.5 h-1.5 rounded-full ${isWorking ? 'bg-primary-fixed-dim animate-subtle-pulse' : 'bg-risk-low animate-subtle-pulse'}`} />
+                        <span className={`text-[10px] font-medium ${isWorking ? 'text-primary-fixed-dim' : 'text-risk-low'}`}>
+                          {agent.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-center gap-1 mt-1">
+                        <Clock className="w-3 h-3 text-on-surface-variant" />
+                        <span className="text-[10px] text-on-surface-variant font-mono">
+                          ~{stats?.avgDuration ? Math.round(stats.avgDuration) : ['340','1200','890','560','230'][i]}ms
+                        </span>
+                      </div>
+                    </div>
                   </motion.div>
                 );
               })}
             </div>
           </motion.div>
 
-          {/* ─── Charts Row ─────────────────────────────────────────── */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Savings Trend */}
-              <Card className="glass-card border-border/30">
-                <CardContent className="p-5">
-                  <h3 className="text-sm font-semibold mb-4">Savings Trend (ZAR)</h3>
+          {/* ─── 5. Charts Grid (12-col) ────────────────────────────── */}
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+              {/* ROI Calculator (4 cols) */}
+              <div className="lg:col-span-4">
+                <div className="glass-card rounded-lg p-5 h-full">
+                  <h3 className="text-sm font-bold text-on-surface mb-4">ROI Calculator</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="label-caps text-on-surface-variant mb-1.5 block">Docs / Day</label>
+                      <Input
+                        type="number"
+                        value={roiDocsPerDay}
+                        onChange={(e) => setRoiDocsPerDay(Number(e.target.value) || 0)}
+                        className="bg-surface-container-high border-glass-border font-mono text-on-surface"
+                      />
+                    </div>
+                    <div>
+                      <label className="label-caps text-on-surface-variant mb-1.5 block">Avg min / Doc</label>
+                      <Input
+                        type="number"
+                        value={roiAvgMinPerDoc}
+                        onChange={(e) => setRoiAvgMinPerDoc(Number(e.target.value) || 0)}
+                        className="bg-surface-container-high border-glass-border font-mono text-on-surface"
+                      />
+                    </div>
+                    <div className="pt-3 border-t border-glass-border">
+                      <span className="label-caps text-on-surface-variant">Annual Savings</span>
+                      <p className="text-2xl font-bold font-mono text-primary-fixed-dim mt-1">
+                        {formatZAR(annualSavings)}
+                      </p>
+                      <p className="text-[10px] text-on-surface-variant mt-1">
+                        Based on R350/hr analyst cost × 250 working days
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Savings Trend Chart (5 cols) */}
+              <div className="lg:col-span-5">
+                <div className="glass-card rounded-lg p-5 h-full">
+                  <h3 className="text-sm font-bold text-on-surface mb-4">Savings Trend (ZAR)</h3>
                   {savingsTrend.length > 0 ? (
                     <ResponsiveContainer width="100%" height={220}>
                       <AreaChart data={savingsTrend}>
                         <defs>
                           <linearGradient id="cyanGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#00e5ff" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#00e5ff" stopOpacity={0} />
+                            <stop offset="5%" stopColor="#00dce5" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#00dce5" stopOpacity={0} />
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.02 240 / 30%)" />
-                        <XAxis dataKey="month" tick={{ fontSize: 12, fill: 'oklch(0.6 0.01 240)' }} />
-                        <YAxis tick={{ fontSize: 12, fill: 'oklch(0.6 0.01 240)' }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
+                        <XAxis dataKey="month" tick={{ fontSize: 12, fill: '#b9caca' }} />
+                        <YAxis tick={{ fontSize: 12, fill: '#b9caca' }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
                         <Tooltip
                           contentStyle={CHART_TOOLTIP_STYLE}
                           formatter={(value: number) => [`R${value.toLocaleString()}`, 'Savings']}
                         />
-                        <Area type="monotone" dataKey="value" stroke="#00e5ff" fill="url(#cyanGradient)" strokeWidth={2} />
+                        <Area type="monotone" dataKey="value" stroke="#00dce5" fill="url(#cyanGradient)" strokeWidth={2} />
                       </AreaChart>
                     </ResponsiveContainer>
                   ) : (
-                    <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">
+                    <div className="h-[220px] flex items-center justify-center text-sm text-on-surface-variant">
                       No trend data available
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
 
-              {/* Industry Risk Breakdown - Stacked Bar Chart */}
-              <Card className="glass-card border-border/30">
-                <CardContent className="p-5">
-                  <h3 className="text-sm font-semibold mb-4">Risk Breakdown by Industry</h3>
-                  {industryRiskData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={220}>
-                      <BarChart data={industryRiskData} layout="vertical" margin={{ left: 10, right: 10 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.02 240 / 30%)" />
-                        <XAxis type="number" tick={{ fontSize: 11, fill: 'oklch(0.6 0.01 240)' }} allowDecimals={false} />
-                        <YAxis
-                          type="category"
-                          dataKey="label"
-                          tick={{ fontSize: 10, fill: 'oklch(0.6 0.01 240)' }}
-                          width={110}
-                        />
-                        <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
-                        <Legend wrapperStyle={{ fontSize: '10px' }} />
-                        <Bar dataKey="critical" stackId="risk" fill="#ef4444" name="Critical" />
-                        <Bar dataKey="high" stackId="risk" fill="#f97316" name="High" />
-                        <Bar dataKey="medium" stackId="risk" fill="#f59e0b" name="Medium" />
-                        <Bar dataKey="low" stackId="risk" fill="#10b981" name="Low" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">
-                      No industry risk data available
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </motion.div>
-
-          {/* ─── Top Industry Risks ────────────────────────────────────── */}
-          {topIndustryRisks.length > 0 && (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65 }}>
-              <Card className="glass-card border-border/30">
-                <CardContent className="p-5">
-                  <h3 className="text-sm font-semibold mb-4">Top Risks by Industry</h3>
-                  <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-2">
-                    {topIndustryRisks.map((risk, i) => (
-                      <div
-                        key={`${risk.industry}-${i}`}
-                        className="flex items-center gap-3 p-3 rounded-lg bg-background/30 border border-border/10 hover:border-border/30 transition-colors"
-                      >
-                        <span className="text-lg flex-shrink-0">{risk.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold">{risk.reference}</span>
-                            <Badge
-                              variant="outline"
-                              className={`text-[9px] px-1.5 py-0 ${
-                                risk.riskLevel === 'critical'
-                                  ? 'border-red-500/30 text-red-400 bg-red-500/5'
-                                  : risk.riskLevel === 'high'
-                                    ? 'border-orange-500/30 text-orange-400 bg-orange-500/5'
-                                    : 'border-amber-500/30 text-amber-400 bg-amber-500/5'
-                              }`}
-                            >
-                              {risk.riskLevel.toUpperCase()}
-                            </Badge>
-                          </div>
-                          <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-                            {risk.title} — {risk.label}
-                          </p>
-                        </div>
-                        {risk.estimatedValue ? (
-                          <span className="text-xs font-medium text-destructive flex-shrink-0">
-                            {formatZAR(risk.estimatedValue)}
+              {/* Risk Index (3 cols) */}
+              <div className="lg:col-span-3">
+                <div className="glass-card rounded-lg p-5 h-full">
+                  <h3 className="text-sm font-bold text-on-surface mb-4">Risk Index</h3>
+                  <div className="space-y-4">
+                    {RISK_INDEX_DATA.map((item) => (
+                      <div key={item.label}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs text-on-surface font-medium">{item.label}</span>
+                          <span className="text-[10px] font-mono font-bold" style={{ color: item.color }}>
+                            {item.risk} {item.value}%
                           </span>
-                        ) : null}
+                        </div>
+                        <div className="h-1.5 rounded-full bg-surface-container-high overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${item.value}%`, backgroundColor: item.color }}
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
+                  <div className="mt-4 pt-3 border-t border-glass-border">
+                    <div className="flex items-center gap-1.5 text-risk-critical">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span className="text-[10px] font-mono">Critical audit pending in af-south-1.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* ─── 6. Compliance Badges (Fixed bottom-right) ──────────── */}
+        <div className="fixed bottom-4 right-4 z-20 flex flex-col items-end gap-2">
+          <div className="glass-card rounded-md px-3 py-1.5 text-[10px] font-mono text-on-surface-variant tracking-wider uppercase">
+            AWS REGION: af-south-1
+          </div>
+          <div className="glass-card rounded-md px-3 py-1.5 text-[10px] font-mono text-risk-low tracking-wider uppercase flex items-center gap-1.5">
+            <Shield className="w-3 h-3" />
+            SARS/POPIA COMPLIANT
+          </div>
         </div>
       </main>
 
       {/* ─── Process Document Dialog ──────────────────────────────── */}
       <Dialog open={processDialogOpen} onOpenChange={setProcessDialogOpen}>
-        <DialogContent className="glass-card-strong border-border/30 sm:max-w-lg">
+        <DialogContent className="glass-card-strong border-glass-border sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Zap className="w-5 h-5 text-primary" />
+            <DialogTitle className="flex items-center gap-2 text-on-surface">
+              <Zap className="w-5 h-5 text-primary-fixed-dim" />
               Process Document
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-on-surface-variant">
               Select an industry and paste document text or choose a sample template to process through the AI swarm.
             </DialogDescription>
           </DialogHeader>
@@ -656,9 +628,9 @@ export default function DashboardScreen() {
           <div className="space-y-4">
             {/* Industry Selector */}
             <div>
-              <label className="text-sm font-medium mb-2 block">Industry</label>
+              <label className="text-sm font-medium mb-2 block text-on-surface">Industry</label>
               <Select value={selectedIndustry} onValueChange={handleIndustryChange}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-surface-container-high border-glass-border text-on-surface">
                   <SelectValue placeholder="Select industry..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -673,9 +645,9 @@ export default function DashboardScreen() {
 
             {/* Sample Document Selector (filtered by industry) */}
             <div>
-              <label className="text-sm font-medium mb-2 block">Sample Document</label>
+              <label className="text-sm font-medium mb-2 block text-on-surface">Sample Document</label>
               <Select value={selectedTemplate} onValueChange={handleTemplateChange}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-surface-container-high border-glass-border text-on-surface">
                   <SelectValue placeholder={
                     Object.keys(industrySampleDocs).length > 0
                       ? 'Select a sample document...'
@@ -700,22 +672,26 @@ export default function DashboardScreen() {
             </div>
 
             <div>
-              <label className="text-sm font-medium mb-2 block">Document Text</label>
+              <label className="text-sm font-medium mb-2 block text-on-surface">Document Text</label>
               <Textarea
                 value={docText}
                 onChange={(e) => setDocText(e.target.value)}
                 placeholder="Paste document text here..."
-                className="min-h-[200px] font-mono text-xs bg-background/50"
+                className="min-h-[200px] font-mono text-xs bg-surface-container-high border-glass-border text-on-surface"
               />
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setProcessDialogOpen(false); setDocText(''); setSelectedTemplate(''); }}>
+            <Button
+              variant="outline"
+              onClick={() => { setProcessDialogOpen(false); setDocText(''); setSelectedTemplate(''); }}
+              className="border-glass-border text-on-surface-variant hover:bg-surface-container-high"
+            >
               Cancel
             </Button>
             <Button
-              className="glow-cyan bg-primary hover:bg-primary/90 text-primary-foreground"
+              className="glow-cyan bg-secondary-container hover:bg-secondary-container/80 text-on-secondary font-semibold"
               onClick={handleProcessDocument}
               disabled={processing || !docText.trim()}
             >

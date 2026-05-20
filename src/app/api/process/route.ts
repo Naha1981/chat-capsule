@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { createSdk } from 'z-ai-web-dev-sdk';
+import ZAISdk from 'z-ai-web-dev-sdk';
 import {
   buildTriagePrompt,
   buildExtractorPrompt,
@@ -49,7 +49,7 @@ async function callAgent(
   systemPrompt: string,
   userMessage: string,
 ): Promise<string> {
-  const sdk = createSdk({ apiKey: process.env.ZAI_API_KEY || '' });
+  const sdk = await ZAISdk.create();
 
   const response = await sdk.chat.completions.create({
     model: 'gpt-4o-mini',

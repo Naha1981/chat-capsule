@@ -3,14 +3,16 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ClipboardCheck, AlertTriangle, AlertCircle, Shield,
-  CheckCircle, XCircle, Loader2, ChevronDown, ChevronUp,
-  Brain, TrendingUp, Eye
+  AlertTriangle, AlertCircle, Shield, CheckCircle, XCircle,
+  Loader2, Brain, TrendingUp, Bell, Search, FileText,
+  FlaskConical, Eye, ClipboardCheck, ShieldCheck, Lock,
+  ArrowRight, Clock, Activity, Ship, Building2, Star,
+  FileCheck2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
 import AppSidebar from '@/components/shared/app-sidebar';
 import { useAppState } from '@/lib/app-state';
 import { toast } from 'sonner';
@@ -46,44 +48,40 @@ const SEVERITY_CONFIG: Record<string, {
   bgColor: string;
   borderColor: string;
   label: string;
+  gradient: string;
 }> = {
   critical: {
     icon: <AlertCircle className="w-5 h-5" />,
-    color: 'text-red-400',
-    bgColor: 'bg-red-500/10',
-    borderColor: 'border-red-500/30',
+    color: 'text-risk-critical',
+    bgColor: 'bg-risk-critical/10',
+    borderColor: 'border-risk-critical/30',
     label: 'CRITICAL',
+    gradient: 'linear-gradient(180deg, #ef4444, #b91c1c)',
   },
   high: {
     icon: <AlertTriangle className="w-5 h-5" />,
-    color: 'text-orange-400',
-    bgColor: 'bg-orange-500/10',
-    borderColor: 'border-orange-500/30',
+    color: 'text-risk-high',
+    bgColor: 'bg-risk-high/10',
+    borderColor: 'border-risk-high/30',
     label: 'HIGH',
+    gradient: 'linear-gradient(180deg, #f97316, #c2410c)',
   },
   medium: {
     icon: <Shield className="w-5 h-5" />,
-    color: 'text-amber-400',
-    bgColor: 'bg-amber-500/10',
-    borderColor: 'border-amber-500/30',
+    color: 'text-risk-medium',
+    bgColor: 'bg-risk-medium/10',
+    borderColor: 'border-risk-medium/30',
     label: 'MEDIUM',
+    gradient: 'linear-gradient(180deg, #f59e0b, #b45309)',
   },
   low: {
     icon: <CheckCircle className="w-5 h-5" />,
-    color: 'text-emerald-400',
-    bgColor: 'bg-emerald-500/10',
-    borderColor: 'border-emerald-500/30',
+    color: 'text-risk-low',
+    bgColor: 'bg-risk-low/10',
+    borderColor: 'border-risk-low/30',
     label: 'LOW',
+    gradient: 'linear-gradient(180deg, #10b981, #047857)',
   },
-};
-
-// ─── Agent Icons ─────────────────────────────────────────────────
-const AGENT_ICONS: Record<string, string> = {
-  triage_clerk: '📋',
-  data_extractor: '🔍',
-  auditor: '🛡️',
-  risk_analyst: '📊',
-  dispatcher: '📨',
 };
 
 // ─── Estimate Financial Impact ───────────────────────────────────
@@ -94,209 +92,110 @@ function estimateFinancialImpact(alert: Alert): string {
   return 'R5,000 – R15,000';
 }
 
-// ─── Review Item Card ────────────────────────────────────────────
-function ReviewItemCard({
-  alert,
-  onApprove,
-  onHold,
+// ─── Agent Pipeline Node ─────────────────────────────────────────
+function PipelineNode({
+  label,
+  icon,
+  status,
+  isLast,
 }: {
-  alert: Alert;
-  onApprove: (id: string, shipmentId: string) => void;
-  onHold: (id: string, shipmentId: string) => void;
+  label: string;
+  icon: React.ReactNode;
+  status: 'complete' | 'active' | 'pending';
+  isLast: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const [approving, setApproving] = useState(false);
-  const [holding, setHolding] = useState(false);
+  return (
+    <div className="flex items-center">
+      <div className="flex flex-col items-center gap-1.5">
+        <div
+          className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
+            status === 'complete'
+              ? 'bg-risk-low/20 border-risk-low text-risk-low'
+              : status === 'active'
+                ? 'bg-risk-critical/20 border-risk-critical text-risk-critical animate-pulse-critical'
+                : 'bg-surface-container-high border-outline-variant text-outline-variant'
+          }`}
+        >
+          {status === 'complete' ? (
+            <CheckCircle className="w-4 h-4" />
+          ) : status === 'active' ? (
+            icon
+          ) : (
+            icon
+          )}
+        </div>
+        <span
+          className={`text-[10px] font-mono uppercase tracking-wider whitespace-nowrap ${
+            status === 'complete'
+              ? 'text-risk-low'
+              : status === 'active'
+                ? 'text-risk-critical font-bold'
+                : 'text-outline-variant'
+          }`}
+        >
+          {label}
+        </span>
+      </div>
+      {!isLast && (
+        <div className="flex items-center mx-1 mb-5">
+          <div
+            className={`w-8 h-0.5 ${
+              status === 'complete' ? 'bg-risk-low/50' : 'bg-outline-variant/30'
+            }`}
+          />
+          <ArrowRight
+            className={`w-3 h-3 ${
+              status === 'complete' ? 'text-risk-low/50' : 'text-outline-variant/30'
+            }`}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
+// ─── Alert Card (Right Column) ──────────────────────────────────
+function AlertStreamCard({ alert }: { alert: Alert }) {
   const severity = SEVERITY_CONFIG[alert.severity] || SEVERITY_CONFIG.medium;
-
-  const handleApprove = async () => {
-    setApproving(true);
-    await onApprove(alert.id, alert.shipment.id);
-    setApproving(false);
-  };
-
-  const handleHold = async () => {
-    setHolding(true);
-    await onHold(alert.id, alert.shipment.id);
-    setHolding(false);
-  };
+  const isCritical = alert.severity === 'critical';
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.3 }}
+      className={`glass-card rounded-lg overflow-hidden ${isCritical ? '' : 'opacity-85'}`}
     >
-      <Card className={`glass-card ${severity.borderColor} overflow-hidden`}>
-        {/* Severity Strip */}
-        <div className={`h-1 ${severity.bgColor}`} style={{ background: alert.severity === 'critical' ? 'linear-gradient(90deg, #ef4444, #f97316)' : alert.severity === 'high' ? 'linear-gradient(90deg, #f97316, #f59e0b)' : undefined }} />
-
-        <CardContent className="p-5">
-          {/* Header */}
-          <div className="flex items-start gap-3">
-            {/* Severity indicator */}
-            <div className={`p-2 rounded-lg ${severity.bgColor} ${severity.color} flex-shrink-0`}>
-              {severity.icon}
+      {/* Left gradient border */}
+      <div className="flex">
+        <div
+          className="w-1 flex-shrink-0"
+          style={{ background: severity.gradient }}
+        />
+        <div className="flex-1 p-3">
+          <div className="flex items-start justify-between mb-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono text-on-surface-variant">
+                {alert.shipment.reference}
+              </span>
             </div>
-
-            <div className="flex-1 min-w-0">
-              {/* Severity badge */}
-              <div className="flex items-center gap-2 mb-1">
-                <Badge className={`text-[10px] font-bold ${severity.bgColor} ${severity.color} ${severity.borderColor}`}>
-                  {severity.label}
-                </Badge>
-                <Badge variant="outline" className="text-[10px]">
-                  {alert.type.replace(/_/g, ' ')}
-                </Badge>
-                <span className="text-[10px] text-muted-foreground ml-auto">
-                  {new Date(alert.createdAt).toLocaleString('en-ZA', {
-                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                  })}
-                </span>
-              </div>
-
-              {/* Shipment reference and title */}
-              <h3 className="text-sm font-semibold">{alert.title}</h3>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs font-mono text-primary/70">{alert.shipment.reference}</span>
-                <span className="text-xs text-muted-foreground">· {alert.shipment.title}</span>
-              </div>
-
-              {/* AI Finding */}
-              <div className="mt-3 p-3 rounded-lg bg-muted/20 border border-border/20">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <Brain className="w-3.5 h-3.5 text-primary" />
-                  <span className="text-[10px] uppercase tracking-wider text-primary font-semibold">AI Finding</span>
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">{alert.message}</p>
-              </div>
-
-              {/* Financial Impact */}
-              <div className="flex items-center gap-1.5 mt-3">
-                <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
-                <span className="text-xs text-muted-foreground">Estimated Financial Impact:</span>
-                <span className="text-xs font-semibold text-amber-400">{estimateFinancialImpact(alert)}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-3 mt-4 pt-4 border-t border-border/20">
-            <Button
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-              onClick={handleApprove}
-              disabled={approving || holding}
+            <Badge
+              className={`text-[9px] font-bold px-1.5 py-0 h-5 ${severity.bgColor} ${severity.color} ${severity.borderColor}`}
             >
-              {approving ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              ) : (
-                <CheckCircle className="w-4 h-4 mr-2" />
-              )}
-              Approve &amp; Forward to Finance
-            </Button>
-            <Button
-              variant="destructive"
-              className="flex-1 font-semibold"
-              onClick={handleHold}
-              disabled={approving || holding}
-            >
-              {holding ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              ) : (
-                <XCircle className="w-4 h-4 mr-2" />
-              )}
-              Hold Shipment
-            </Button>
+              {severity.label}
+            </Badge>
           </div>
-
-          {/* View Details Toggle */}
-          <button
-            className="flex items-center gap-1.5 mt-3 text-xs text-primary/70 hover:text-primary transition-colors"
-            onClick={() => setExpanded(!expanded)}
-          >
-            <Eye className="w-3.5 h-3.5" />
-            {expanded ? 'Hide' : 'View'} Details
-            {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          </button>
-
-          {/* Expanded Details */}
-          <AnimatePresence>
-            {expanded && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.2 }}
-                className="overflow-hidden"
-              >
-                <div className="mt-3 space-y-3 pt-3 border-t border-border/20">
-                  {/* Shipment Details */}
-                  <div>
-                    <h5 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Shipment Details</h5>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <span className="text-muted-foreground">Industry:</span>{' '}
-                        <span className="font-medium capitalize">{alert.shipment.industry}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Status:</span>{' '}
-                        <span className="font-medium capitalize">{alert.shipment.status}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Risk Level:</span>{' '}
-                        <span className={`font-medium capitalize ${severity.color}`}>{alert.shipment.riskLevel}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Commodity:</span>{' '}
-                        <span className="font-medium">{alert.shipment.commodity || '—'}</span>
-                      </div>
-                      {alert.shipment.totalAmount && (
-                        <div>
-                          <span className="text-muted-foreground">Total Amount:</span>{' '}
-                          <span className="font-medium">R{alert.shipment.totalAmount.toLocaleString()}</span>
-                        </div>
-                      )}
-                      <div>
-                        <span className="text-muted-foreground">Alert Channel:</span>{' '}
-                        <span className="font-medium capitalize">{alert.channel}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Separator className="bg-border/20" />
-
-                  {/* Agent Outputs */}
-                  <div>
-                    <h5 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Agent Processing Pipeline</h5>
-                    <div className="space-y-2">
-                      {Object.entries(AGENT_ICONS).map(([key, icon]) => (
-                        <div key={key} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-muted/15">
-                          <span>{icon}</span>
-                          <span className="font-medium capitalize">{key.replace(/_/g, ' ')}</span>
-                          <Badge variant="outline" className="text-[9px] ml-auto border-emerald-500/30 text-emerald-400">
-                            Completed
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <Separator className="bg-border/20" />
-
-                  {/* Alert Details */}
-                  <div>
-                    <h5 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Full Alert Data</h5>
-                    <pre className="text-[10px] font-mono text-muted-foreground bg-background/50 rounded-lg p-3 overflow-x-auto max-h-40 overflow-y-auto">
-                      {JSON.stringify(alert, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </CardContent>
-      </Card>
+          <h4 className="text-sm font-semibold text-on-surface leading-snug mb-1">
+            {alert.title}
+          </h4>
+          <div className="flex items-center gap-1 text-[10px] text-on-surface-variant">
+            <Clock className="w-3 h-3" />
+            {new Date(alert.createdAt).toLocaleString('en-ZA', {
+              month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            })}
+          </div>
+        </div>
+      </div>
     </motion.div>
   );
 }
@@ -305,6 +204,7 @@ function ReviewItemCard({
 export default function ReviewScreen() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchAlerts = useCallback(async () => {
     try {
@@ -371,69 +271,444 @@ export default function ReviewScreen() {
     }
   };
 
+  // Primary alert for the main view
+  const primaryAlert = alerts[0];
+  const primarySeverity = primaryAlert
+    ? SEVERITY_CONFIG[primaryAlert.severity] || SEVERITY_CONFIG.medium
+    : null;
+
   if (loading) {
     return (
       <div className="flex min-h-screen">
         <AppSidebar />
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 md:ml-64 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="w-8 h-8 text-primary animate-spin" />
-            <span className="text-sm text-muted-foreground">Loading review queue...</span>
+            <span className="text-sm text-on-surface-variant">Loading review queue...</span>
           </div>
         </div>
       </div>
     );
   }
 
+  if (alerts.length === 0) {
+    return (
+      <div className="flex min-h-screen">
+        <AppSidebar />
+        <div className="flex-1 md:ml-64 flex items-center justify-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center py-20"
+          >
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-risk-low/10 flex items-center justify-center mb-4">
+              <CheckCircle className="w-8 h-8 text-risk-low" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">All Clear!</h3>
+            <p className="text-sm text-on-surface-variant max-w-md mx-auto">
+              No high-risk or critical items require your review right now. The AI swarm is handling everything autonomously.
+            </p>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-surface-dim">
       <AppSidebar />
 
-      <main className="flex-1 min-h-screen overflow-y-auto">
+      <main className="flex-1 md:ml-64 min-h-screen flex flex-col relative">
         {/* Mobile spacer */}
         <div className="h-14 md:hidden" />
 
-        {/* Header */}
-        <header className="sticky top-0 z-30 glass-card-strong border-b border-border/30 px-4 sm:px-6 py-4">
-          <div className="flex items-center gap-3">
-            <ClipboardCheck className="w-5 h-5 text-primary" />
-            <div>
-              <h1 className="text-lg font-bold">Review Queue</h1>
-              <p className="text-xs text-muted-foreground">Items requiring your attention</p>
+        {/* ─── Top Bar ─────────────────────────────────────────── */}
+        <header className="sticky top-0 z-30 glass-card-strong border-b border-glass-border px-4 sm:px-6 py-3">
+          <div className="flex items-center gap-4">
+            {/* Left: Headline */}
+            <h1
+              className="text-lg font-extrabold text-primary-fixed-dim tracking-tight hidden sm:block"
+              style={{ fontFamily: 'var(--font-hanken-grotesk), system-ui, sans-serif' }}
+            >
+              Supply Chain Alpha
+            </h1>
+            <div className="hidden sm:block h-6 w-px bg-glass-border" />
+
+            {/* Search */}
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
+              <Input
+                placeholder="Search shipments..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-8 text-xs bg-surface-container-high border-glass-border placeholder:text-on-surface-variant/50"
+              />
             </div>
-            <Badge variant="outline" className="border-red-500/30 bg-red-500/5 text-red-400 text-[10px] ml-2">
-              {alerts.length} pending
-            </Badge>
+
+            {/* Right: Bell + Process Document Button */}
+            <div className="flex items-center gap-3 ml-auto">
+              <button className="relative p-2 rounded-lg hover:bg-surface-container-high transition-colors">
+                <Bell className="w-4 h-4 text-on-surface-variant" />
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-risk-critical" />
+              </button>
+              <Button
+                className="bg-primary-fixed-dim text-on-primary hover:bg-primary-fixed font-semibold text-xs glow-cyan"
+                size="sm"
+              >
+                <FileText className="w-3.5 h-3.5 mr-1.5" />
+                Process Document
+              </Button>
+            </div>
           </div>
         </header>
 
-        <div className="p-4 sm:p-6 space-y-4">
-          {alerts.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="py-20 text-center"
+        {/* ─── Section Header ──────────────────────────────────── */}
+        <div className="px-4 sm:px-6 pt-5 pb-2">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+            <h2
+              className="text-2xl sm:text-3xl font-extrabold text-primary tracking-tight"
+              style={{ fontFamily: 'var(--font-hanken-grotesk), system-ui, sans-serif' }}
             >
-              <div className="mx-auto w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center mb-4">
-                <CheckCircle className="w-8 h-8 text-emerald-400" />
+              Attention Focus:{' '}
+              <span className="text-risk-critical">CRITICAL</span>
+            </h2>
+            <div className="flex items-center gap-3">
+              <Badge className="bg-risk-critical/15 text-risk-critical border-risk-critical/30 text-[10px] font-bold px-2.5 py-0.5 h-6">
+                <span className="w-2 h-2 rounded-full bg-risk-critical mr-1.5 animate-pulse" />
+                {alerts.length} UNRESOLVED RISK{alerts.length !== 1 ? 'S' : ''}
+              </Badge>
+            </div>
+          </div>
+          <p className="text-sm text-on-surface-variant mt-1">
+            Reviewing flag generated by AI Risk Agent{' '}
+            {primaryAlert && (
+              <span className="font-mono text-secondary-fixed-dim text-xs">
+                {primaryAlert.shipment.reference}
+              </span>
+            )}
+          </p>
+        </div>
+
+        {/* ─── Main Grid (8/4 split) ──────────────────────────── */}
+        <div className="flex-1 px-4 sm:px-6 py-4 grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* ─── Left Column (8 cols) ──────────────────────────── */}
+          <div className="lg:col-span-8 space-y-5">
+            {primaryAlert && primarySeverity && (
+              <>
+                {/* ── AI Finding Box ───────────────────────────── */}
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <div className="glass-card rounded-lg overflow-hidden">
+                    {/* Primary-fixed-dim left bar */}
+                    <div className="flex">
+                      <div className="w-1.5 flex-shrink-0 bg-primary-fixed-dim" />
+                      <div className="flex-1 p-5">
+                        {/* Header row */}
+                        <div className="flex items-start gap-3 mb-3">
+                          <div className="w-10 h-10 rounded-full bg-primary-fixed-dim/15 flex items-center justify-center flex-shrink-0">
+                            <Brain className="w-5 h-5 text-primary-fixed-dim" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3
+                              className="text-base font-bold text-on-surface"
+                              style={{ fontFamily: 'var(--font-hanken-grotesk), system-ui, sans-serif' }}
+                            >
+                              AI Finding: {primaryAlert.title}
+                            </h3>
+                            <p className="text-sm text-on-surface-variant leading-relaxed mt-1.5">
+                              {primaryAlert.message}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Financial Impact + Confidence */}
+                        <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t border-glass-border">
+                          <div className="flex items-center gap-2">
+                            <TrendingUp className="w-4 h-4 text-risk-medium" />
+                            <span className="text-xs text-on-surface-variant">Financial Impact:</span>
+                            <span className="text-sm font-bold text-risk-medium">
+                              {estimateFinancialImpact(primaryAlert)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-secondary-fixed-dim" />
+                            <span className="text-xs text-on-surface-variant">Confidence Score:</span>
+                            <span className="text-sm font-bold text-secondary-fixed-dim">94.7%</span>
+                          </div>
+                        </div>
+
+                        {/* Model badge */}
+                        <div className="mt-3">
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] font-mono border-outline-variant/50 text-on-surface-variant"
+                          >
+                            <FlaskConical className="w-3 h-3 mr-1" />
+                            Model: TradeSentry v4.2
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* ── Agent Pipeline Visual ────────────────────── */}
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: 0.1 }}
+                >
+                  <div className="glass-card rounded-lg p-5">
+                    <h4 className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant mb-4">
+                      Agent Pipeline
+                    </h4>
+                    <div className="flex items-start justify-between overflow-x-auto pb-2 custom-scrollbar">
+                      <PipelineNode
+                        label="Ingestion"
+                        icon={<ClipboardCheck className="w-4 h-4" />}
+                        status="complete"
+                        isLast={false}
+                      />
+                      <PipelineNode
+                        label="Auditor"
+                        icon={<Eye className="w-4 h-4" />}
+                        status="complete"
+                        isLast={false}
+                      />
+                      <PipelineNode
+                        label="Risk Analyst"
+                        icon={<AlertTriangle className="w-4 h-4" />}
+                        status="active"
+                        isLast={false}
+                      />
+                      <PipelineNode
+                        label="Compliance"
+                        icon={<ShieldCheck className="w-4 h-4" />}
+                        status="pending"
+                        isLast={false}
+                      />
+                      <PipelineNode
+                        label="Release"
+                        icon={<CheckCircle className="w-4 h-4" />}
+                        status="pending"
+                        isLast={true}
+                      />
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* ── Action Zone ──────────────────────────────── */}
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: 0.2 }}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Approve & Forward */}
+                    <ApproveButton
+                      alertId={primaryAlert.id}
+                      shipmentId={primaryAlert.shipment.id}
+                      onApprove={handleApprove}
+                    />
+
+                    {/* Hold Shipment */}
+                    <HoldButton
+                      alertId={primaryAlert.id}
+                      shipmentId={primaryAlert.shipment.id}
+                      onHold={handleHold}
+                    />
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </div>
+
+          {/* ─── Right Column (4 cols) ─────────────────────────── */}
+          <div className="lg:col-span-4 space-y-5">
+            {/* Active Risk Stream Header */}
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-risk-critical" />
+              <span className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant font-bold">
+                Active Risk Stream
+              </span>
+            </div>
+
+            {/* Alert Cards */}
+            <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
+              {alerts.map((alert) => (
+                <AlertStreamCard key={alert.id} alert={alert} />
+              ))}
+            </div>
+
+            {/* Historical Context */}
+            <div className="bg-surface-container-high rounded-lg p-4 space-y-3">
+              <h4 className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant font-bold">
+                Historical Context
+              </h4>
+              {primaryAlert && (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-surface-container-highest flex items-center justify-center">
+                      <Ship className="w-4 h-4 text-on-surface-variant" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-on-surface">
+                        Carrier: {primaryAlert.shipment.title}
+                      </p>
+                      <p className="text-[10px] text-on-surface-variant font-mono">
+                        {primaryAlert.shipment.industry} • {primaryAlert.shipment.commodity || 'General Cargo'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Port image placeholder */}
+                  <div className="h-20 rounded-lg bg-surface-container-highest overflow-hidden relative">
+                    <div className="absolute inset-0 bg-gradient-to-t from-surface-container-high to-transparent z-10" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Building2 className="w-8 h-8 text-outline-variant/30" />
+                    </div>
+                    <div className="absolute bottom-2 left-2 z-20 flex items-center gap-1">
+                      <span className="text-[9px] font-mono text-on-surface-variant bg-surface-container/80 px-1.5 py-0.5 rounded">
+                        Port of Durban
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-surface-container rounded-lg p-2.5 text-center">
+                      <div className="flex items-center justify-center gap-1 mb-1">
+                        <Star className="w-3 h-3 text-risk-medium" />
+                        <span className="text-[10px] text-on-surface-variant">Authority Rating</span>
+                      </div>
+                      <span className="text-sm font-bold text-risk-medium">B+</span>
+                    </div>
+                    <div className="bg-surface-container rounded-lg p-2.5 text-center">
+                      <div className="flex items-center justify-center gap-1 mb-1">
+                        <FileCheck2 className="w-3 h-3 text-secondary-fixed-dim" />
+                        <span className="text-[10px] text-on-surface-variant">Doc Match</span>
+                      </div>
+                      <span className="text-sm font-bold text-secondary-fixed-dim">67%</span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Audit Chain Notice */}
+            <div className="border-2 border-dashed border-outline-variant/40 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center flex-shrink-0">
+                  <Lock className="w-4 h-4 text-on-surface-variant" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold text-on-surface mb-0.5">
+                    Immutable Audit Chain
+                  </h4>
+                  <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                    All decisions are logged to the SARS immutable audit chain
+                  </p>
+                </div>
               </div>
-              <h3 className="text-lg font-semibold mb-2">All Clear!</h3>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                No high-risk or critical items require your review right now. The AI swarm is handling everything autonomously.
-              </p>
-            </motion.div>
-          ) : (
-            alerts.map((alert) => (
-              <ReviewItemCard
-                key={alert.id}
-                alert={alert}
-                onApprove={handleApprove}
-                onHold={handleHold}
-              />
-            ))
-          )}
+            </div>
+          </div>
+        </div>
+
+        {/* ─── Compliance Badge (Fixed bottom-right) ──────────── */}
+        <div className="fixed bottom-4 right-4 z-40">
+          <div className="glass-card rounded-full px-3 py-1.5 flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-risk-low" />
+            <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-wider">
+              AWS af-south-1 • POPIA COMPLIANT
+            </span>
+          </div>
         </div>
       </main>
     </div>
+  );
+}
+
+// ─── Approve Button Component ────────────────────────────────────
+function ApproveButton({
+  alertId,
+  shipmentId,
+  onApprove,
+}: {
+  alertId: string;
+  shipmentId: string;
+  onApprove: (alertId: string, shipmentId: string) => Promise<void>;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const handleClick = async () => {
+    setLoading(true);
+    await onApprove(alertId, shipmentId);
+    setLoading(false);
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={loading}
+      className="glass-card rounded-lg p-4 border-2 border-risk-low/40 hover:border-risk-low/80 transition-all group text-left"
+    >
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-10 h-10 rounded-full bg-risk-low/15 flex items-center justify-center group-hover:bg-risk-low/25 transition-colors">
+          {loading ? (
+            <Loader2 className="w-5 h-5 text-risk-low animate-spin" />
+          ) : (
+            <CheckCircle className="w-5 h-5 text-risk-low" />
+          )}
+        </div>
+        <div>
+          <h4 className="text-sm font-bold text-risk-low">Approve & Forward</h4>
+          <p className="text-[11px] text-on-surface-variant">Clear to SARS Compliance</p>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// ─── Hold Button Component ───────────────────────────────────────
+function HoldButton({
+  alertId,
+  shipmentId,
+  onHold,
+}: {
+  alertId: string;
+  shipmentId: string;
+  onHold: (alertId: string, shipmentId: string) => Promise<void>;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const handleClick = async () => {
+    setLoading(true);
+    await onHold(alertId, shipmentId);
+    setLoading(false);
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={loading}
+      className="glass-card rounded-lg p-4 border-2 border-risk-critical/40 hover:border-risk-critical/80 transition-all group text-left"
+    >
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-10 h-10 rounded-full bg-risk-critical/15 flex items-center justify-center group-hover:bg-risk-critical/25 transition-colors">
+          {loading ? (
+            <Loader2 className="w-5 h-5 text-risk-critical animate-spin" />
+          ) : (
+            <XCircle className="w-5 h-5 text-risk-critical" />
+          )}
+        </div>
+        <div>
+          <h4 className="text-sm font-bold text-risk-critical">Hold Shipment</h4>
+          <p className="text-[11px] text-on-surface-variant">Internal Investigation Required</p>
+        </div>
+      </div>
+    </button>
   );
 }
